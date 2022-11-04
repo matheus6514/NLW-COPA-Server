@@ -30,7 +30,7 @@ export async function poolRoutes(fastify: FastifyInstance){
           code,
           ownerId: request.user.sub,
 
-          participants: {
+          participant: {
             create: {
               userId: request.user.sub,
             }
@@ -52,7 +52,7 @@ export async function poolRoutes(fastify: FastifyInstance){
     return reply.status(201).send({ code })
   })
 
-  fastify.post('/pools/:id/join',{
+  fastify.post('/pools/join',{
     onRequest: [authenticate]
   }, async (request, reply) =>{
       const joinPoolBody = z.object({
@@ -86,6 +86,17 @@ export async function poolRoutes(fastify: FastifyInstance){
         })
       }
 
+      if(!pool.ownerId) {
+        await prisma.pool.update({
+          where: {
+            id: pool.id,
+          },
+          data: {
+            ownerId: request.user.sub,
+          }
+        })
+      }
+
       await prisma.participant.create({
         data: {
           poolId: pool.id,
@@ -94,5 +105,90 @@ export async function poolRoutes(fastify: FastifyInstance){
       })
 
       return reply.status(201).send()
+  })
+
+  fastify.get('/pools', {
+    onRequest: [authenticate]
+  }, async (request) => {
+    const pools = await prisma.pool.findMany({
+      where: {
+        participant: {
+          some: {
+            userId: request.user.sub,
+          }
+        }
+      },
+      include: {
+        _count: {
+          select: {
+            participant: true,
+          }
+        },
+        participant: {
+          select: {
+            id: true,
+
+            user: {
+              select: {
+                avatarUrl: true,
+              }
+            }
+          },
+          take: 4,
+        },
+        owner: {
+          select: {
+            id: true,
+            name: true,
+          }
+        }
+      }
+    })
+
+    return { pools }
+  })
+  
+  fastify.get('/pools/:id', {
+    onRequest: [authenticate],
+  }, async (request) => {
+    const getPoolParams = z.object({
+      id: z.string(),
+    })
+
+    const { id } =  getPoolParams.parse(request.params)
+
+    const pool = await prisma.pool.findUnique({
+      where: {
+        id,
+      },
+      include: {
+        _count: {
+          select: {
+            participant: true,
+          }
+        },
+        participant: {
+          select: {
+            id: true,
+
+            user: {
+              select: {
+                avatarUrl: true,
+              }
+            }
+          },
+          take: 4,
+        },
+        owner: {
+          select: {
+            id: true,
+            name: true,
+          }
+        }
+      }
+    })
+
+    return { pool }
+
   })
 }
